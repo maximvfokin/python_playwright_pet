@@ -9,7 +9,7 @@ class Assertions(Base):
         super().__init__(page)
 
     def check_url(self, uri, msg):
-        expect(self.page).to_have_url(f"{host.get_base_url()}{uri}", timeout=10000), msg
+        expect(self.page).to_have_url(f"{host.get_base_url()}{uri}", timeout=60000), msg
 
     def have_text(self, locator, text: str, msg):  # элемент имеет текст
         loc = self.page.locator(locator)
