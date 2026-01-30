@@ -48,4 +48,4 @@ jobs:
             export args='${{github.event.inputs.arguments}}'
           fi
             echo "::set-output name=env_name::${ENV:-prod}"
-            pytest ${args} --bn ${{ matrix.browser }}
+            pytest ${args} -n 4 --bn ${{ matrix.browser }}
