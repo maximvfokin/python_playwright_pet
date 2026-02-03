@@ -4,3 +4,4 @@ requests
 qase-pytest==7.0.8
 python-dotenv
 pytest-xdist
+allure-pytest
