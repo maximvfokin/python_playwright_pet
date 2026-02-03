@@ -1,10 +1,6 @@
 name: TestRegression
 
 on:
-  #push: {}
-#  schedule:
-#    - cron: '0 22 * * *'
-
   workflow_dispatch:
     inputs:
       environment:
@@ -15,7 +11,6 @@ on:
         required: false
         default: "-m regression"
         description: "pytest additional arguments, e.g. `-m regression`"
-
 
 jobs:
   playwright:
@@ -29,17 +24,29 @@ jobs:
     strategy:
       matrix:
         browser: [remote_chrome]
-    outputs:
-      env_name: ${{ steps.pytest.outputs.env_name }}
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: python3 -m pip install -r requirements.txt
-      - run: |
+
+      - name: Install Allure dependencies
+        run: |
+          # Устанавливаем allure-pytest для генерации отчетов
+          pip install allure-pytest
+          # Устанавливаем Allure CLI
+          wget -q -O allure-2.27.0.tgz https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz
+          tar -xzf allure-2.27.0.tgz -C /opt/
+          ln -s /opt/allure-2.27.0/bin/allure /usr/bin/allure
+
+      - name: Run tests with Allure reporting
+        id: pytest
+        run: |
           if [ "${{github.event_name}}" = "schedule" ]; then
             export args="-m regression"
             export ENV="prod"
@@ -47,5 +54,73 @@ jobs:
             export ENV='${{github.event.inputs.environment}}'
             export args='${{github.event.inputs.arguments}}'
           fi
-            echo "::set-output name=env_name::${ENV:-prod}"
-            pytest ${args} -n 4 --bn ${{ matrix.browser }}
+          
+          # Запуск тестов с генерацией Allure результатов
+          pytest ${args} -n 4 --bn ${{ matrix.browser }} \
+            --alluredir=allure-results \
+            --clean-alluredir
+          
+          echo "env_name=${ENV:-prod}" >> $GITHUB_OUTPUT
+
+      - name: Upload Allure results as artifact
+        if: always()  # Загружаем даже если тесты упали
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ github.run_id }}
+          path: allure-results/
+          retention-days: 7
+
+      - name: Generate and upload Allure report
+        if: always()
+        run: |
+          # Генерируем HTML отчет
+          allure generate allure-results -o allure-report --clean
+          
+          # Загружаем сгенерированный отчет как артефакт
+          echo "ALLURE_REPORT_PATH=$(pwd)/allure-report" >> $GITHUB_ENV
+
+      - name: Upload Allure report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ github.run_id }}
+          path: allure-report/
+          retention-days: 30
+
+  # Опционально: публикация отчета на GitHub Pages (как в примере)
+  publish-report:
+    if: always()
+    needs: [playwright]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Download Allure results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          merge-multiple: true
+
+      - name: Generate Allure report
+        run: |
+          # Установка Allure
+          wget -q -O allure-2.27.0.tgz https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz
+          tar -xzf allure-2.27.0.tgz -C /opt/
+          ln -s /opt/allure-2.27.0/bin/allure /usr/bin/allure
+          
+          # Генерация отчета
+          allure generate -c allure-results -o _site --clean
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
