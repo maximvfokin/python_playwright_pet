@@ -116,7 +116,8 @@ jobs:
         run: |
           curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
           tar -xzf allure-2.27.0.tgz -C /opt/
-          ln -sf /opt/allure-2.27.0/bin/allure /usr/bin/allure
+          sudo ln -sf /opt/allure-2.27.0/bin/allure /usr/bin/allure
+          allure --version
 
       - name: Checkout gh-pages branch
         uses: actions/checkout@v3
