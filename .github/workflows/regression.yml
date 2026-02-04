@@ -1,158 +1,74 @@
-name: TestRegression
+name: API tests  # Название workflow
 
 on:
-  workflow_dispatch:
-    inputs:
-      environment:
-        required: true
-        default: "prod"
-        description: "Set environment, e.g. `ENV=prod or ENV=shot`"
-      arguments:
-        required: false
-        default: "-m regression"
-        description: "pytest additional arguments, e.g. `-m regression`"
+  push:
+    branches:
+      - main  # Запускать workflow при пуше в main
+  pull_request:
+    branches:
+      - main  # Запускать workflow при открытии PR в main
 
 jobs:
-  playwright:
-    name: Regression tests
-    runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright/python:v1.58.0-noble
-    env:
-      AUTH_LOGIN: ${{ secrets.AUTH_LOGIN }}
-      AUTH_PASSWORD: ${{ secrets.AUTH_PASSWORD }}
-    strategy:
-      matrix:
-        browser: [ remote_chrome ]
-    outputs:
-      run_id: ${{ steps.run-tests.outputs.run_id }}
+  run-tests:  # Джоба для запуска тестов
+    runs-on: ubuntu-latest  # Используем последнюю версию Ubuntu
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Check out repository  # Клонирование кода репозитория в среду CI/CD
+        uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          apt-get update
-          apt-get install -y curl unzip default-jre-headless
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Python  # Установка Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'  # Используем Python версии 3.12
 
-      - name: Install Python dependencies
+      - name: Install dependencies  # Установка зависимостей проекта
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install allure-pytest pytest-xdist
+          python -m pip install --upgrade pip  # Обновляем pip до последней версии
+          pip install -r requirements.txt  # Устанавливаем зависимости, указанные в requirements.txt
 
-      - name: Install Allure CLI
+      - name: Run API tests with pytest and generate Allure results  # Запуск тестов
         run: |
-          # Устанавливаем Allure 3.1.0 с правильным URL и форматом
-          wget -q https://github.com/allure-framework/allure2/releases/download/3.1.0/allure-3.1.0.zip
-          unzip allure-3.1.0.zip -d /opt/
-          ln -sf /opt/allure-3.1.0/bin/allure /usr/bin/allure
-          allure --version
+          pytest -m regression --alluredir=allure-results --numprocesses 2
+          # Запускаем тесты с меткой "regression"
+          # --alluredir=allure-results сохраняет результаты в папку allure-results
+          # --numprocesses 2 - выполняем тесты в 2 потока (ускоряет выполнение)
 
-      - name: Run tests
-        id: run-tests
-        run: |
-          if [ "${{github.event_name}}" = "schedule" ]; then
-            export args="-m regression"
-            export ENV="prod"
-          else
-            export ENV='${{github.event.inputs.environment}}'
-            export args='${{github.event.inputs.arguments}}'
-          fi
-          
-          echo "Running tests with ENV=$ENV and args=$args"
-          
-          # Сохраняем run_id для передачи в следующую джобу
-          echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
-          
-          # Запуск тестов с генерацией Allure результатов
-          pytest ${args} -n 4 --bn ${{ matrix.browser }} \
-            --alluredir=allure-results \
-            --clean-alluredir || true
-
-      - name: Upload Allure results
-        if: always()
+      - name: Upload Allure results  # Загружаем результаты тестов в GitHub Actions
+        if: always()  # Загружаем файлы независимо от успеха/неуспеха тестов
         uses: actions/upload-artifact@v4
         with:
-          name: allure-results-${{ github.run_id }}
-          path: allure-results/
-          retention-days: 7
+          name: allure-results  # Название артефакта
+          path: allure-results  # Путь к файлам отчета
 
-  publish-report:
-    if: always()
-    needs: [ playwright ]
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-      contents: write
-      actions: read
+  publish-report:  # Джоба для публикации Allure-отчета на GitHub Pages
+    if: always()  # Джоба будет выполнена вне зависимости от успеха или неуспеха run-tests
+    needs: [ run-tests ]  # Выполняется только после успешного выполнения run-tests
+    runs-on: ubuntu-latest  # Используем последнюю версию Ubuntu
 
     steps:
-      - name: Download Allure results
-        uses: actions/download-artifact@v4
-        with:
-          # Используем run_id из контекста, а не из outputs
-          name: allure-results-${{ github.run_id }}
-          path: allure-results
-
-      - name: Checkout gh-pages branch
+      - name: Check out repository  # Клонируем репозиторий, включая ветку gh-pages
         uses: actions/checkout@v4
         with:
-          ref: gh-pages
-          path: gh-pages
+          ref: gh-pages  # Операции будем выполнять в ветке gh-pages
+          path: gh-pages  # Клонируем файлы в папку gh-pages
 
-      - name: Create history directory if not exists
-        run: |
-          mkdir -p gh-pages/allure-history
+      - name: Download Allure results  # Загружаем ранее сохраненные результаты тестов
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results  # Название артефакта
+          path: allure-results  # Путь для скачивания
 
-      - name: Copy previous reports for history
-        run: |
-          # Копируем предыдущий отчет как историю, если он существует
-          if [ -d "gh-pages/allure-history/latest" ]; then
-            # Создаем папку с timestamp для истории
-            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-            cp -r gh-pages/allure-history/latest "gh-pages/allure-history/$TIMESTAMP" || true
-          fi
-
-      - name: Generate Allure Report
+      - name: Allure Report action from marketplace  # Генерация отчета Allure
+        uses: simple-elf/allure-report-action@v1.12
         if: always()
-        run: |
-          # Используем локальный Allure CLI или устанавливаем его
-          if command -v allure &> /dev/null; then
-          allure generate allure-results -o gh-pages/allure-history/latest --clean
-          else
-          # Устанавливаем Allure CLI 3.1.0 локально для этой джобы
-          ALLURE_VERSION="3.1.0"
-          curl -L -o "allure-${ALLURE_VERSION}.zip" "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.zip"
-          unzip "allure-${ALLURE_VERSION}.zip"
-          "./allure-${ALLURE_VERSION}/bin/allure" generate allure-results -o gh-pages/allure-history/latest --clean
-          fi
+        with:
+          allure_results: allure-results  # Папка с результатами тестов
+          allure_history: allure-history  # Папка для хранения истории отчетов
 
-      - name: Prepare GitHub Pages directory
-        if: always()
-        run: |
-          cd gh-pages
-          # Создаем index.html для перенаправления на последний отчет
-          echo '<!DOCTYPE html>
-          <html>
-          <head>
-              <title>Allure Test Reports</title>
-              <meta http-equiv="refresh" content="0; url=./allure-history/latest/index.html" />
-          </head>
-          <body>
-              <p>Redirecting to latest Allure report...</p>
-          </body>
-          </html>' > index.html
-
-      - name: Deploy to GitHub Pages
+      - name: Deploy report to Github Pages  # Публикация отчета на GitHub Pages
         if: always()
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./gh-pages
-          force_orphan: false  # Сохраняем историю
+          github_token: ${{ secrets.GITHUB_TOKEN }}  # Токен для доступа к репозиторию
+          publish_branch: gh-pages  # Публикуем отчет в ветку gh-pages
+          publish_dir: allure-history  # Папка, где находится сгенерированный отчет
