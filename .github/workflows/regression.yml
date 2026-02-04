@@ -24,8 +24,6 @@ jobs:
     strategy:
       matrix:
         browser: [ remote_chrome ]
-    outputs:
-      run_id: ${{ steps.run-tests.outputs.run_id }}
     steps:
       - uses: actions/checkout@v3
 
@@ -44,12 +42,15 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install allure-pytest pytest-xdist
+          # Для Allure 3 можно установить последнюю версию
+          pip install allure-pytest==2.13.2  # Последняя версия для Allure 3
 
-      - name: Install Allure CLI
+      - name: Install Allure 3 CLI
         run: |
-          curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
-          tar -xzf allure-2.27.0.tgz -C /opt/
-          ln -sf /opt/allure-2.27.0/bin/allure /usr/bin/allure
+          # Устанавливаем Allure 3 (версия 2.29.0 и выше)
+          curl -sL -o allure-3.0.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/3.0.0/allure-commandline-3.0.0.tgz
+          tar -xzf allure-3.0.0.tgz -C /opt/
+          ln -sf /opt/allure-3.0.0/bin/allure /usr/bin/allure
           allure --version
 
       - name: Run tests
@@ -65,9 +66,6 @@ jobs:
           
           echo "Running tests with ENV=$ENV and args=$args"
           
-          # Сохраняем run_id для передачи в следующую джобу
-          echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
-          
           # Запуск тестов с генерацией Allure результатов
           pytest ${args} -n 4 --bn ${{ matrix.browser }} \
             --alluredir=allure-results \
@@ -77,7 +75,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-results-${{ github.run_id }}
+          name: allure-results
           path: allure-results/
           retention-days: 7
 
@@ -92,60 +90,100 @@ jobs:
       actions: read
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Получаем всю историю
+
       - name: Download Allure results
         uses: actions/download-artifact@v4
         with:
-          # Используем run_id из контекста, а не из outputs
-          name: allure-results-${{ github.run_id }}
+          name: allure-results
           path: allure-results
 
+      - name: Setup Allure 3 CLI
+        run: |
+          # Устанавливаем Allure 3 для генерации отчета
+          curl -sL -o allure-3.0.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/3.0.0/allure-commandline-3.0.0.tgz
+          tar -xzf allure-3.0.0.tgz -C /opt/
+          ln -sf /opt/allure-3.0.0/bin/allure /usr/bin/allure
+          allure --version
+
       - name: Checkout gh-pages branch
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-
-      - name: Create history directory if not exists
         run: |
-          mkdir -p gh-pages/allure-history
-
-      - name: Copy previous reports for history
-        run: |
-          # Копируем предыдущий отчет как историю, если он существует
-          if [ -d "gh-pages/allure-history/latest" ]; then
-            # Создаем папку с timestamp для истории
-            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-            cp -r gh-pages/allure-history/latest "gh-pages/allure-history/$TIMESTAMP" || true
-          fi
+          git fetch origin gh-pages:gh-pages || true
+          git worktree add --checkout gh-pages gh-pages || git worktree add gh-pages gh-pages
 
       - name: Generate Allure Report
         if: always()
         run: |
-          # Используем локальный Allure CLI или Docker
-          if command -v allure &> /dev/null; then
-            allure generate allure-results -o gh-pages/allure-history/latest --clean
-          else
-            # Устанавливаем Allure CLI локально для этой джобы
-            curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
-            tar -xzf allure-2.27.0.tgz
-            ./allure-2.27.0/bin/allure generate allure-results -o gh-pages/allure-history/latest --clean
-          fi
-
-      - name: Prepare GitHub Pages directory
-        if: always()
-        run: |
+          # Создаем уникальную папку для текущего отчета
+          REPORT_DIR="allure-report-$(date +%Y%m%d-%H%M%S)-${{ github.run_id }}"
+          
+          # Генерируем отчет
+          allure generate allure-results -o "gh-pages/$REPORT_DIR" --clean
+          
+          # Создаем/обновляем символическую ссылку на последний отчет
           cd gh-pages
-          # Создаем index.html для перенаправления на последний отчет
-          echo '<!DOCTYPE html>
+          ln -sfn "$REPORT_DIR" latest
+          
+          # Обновляем index.html
+          cat > index.html << 'EOF'
+          <!DOCTYPE html>
           <html>
           <head>
               <title>Allure Test Reports</title>
-              <meta http-equiv="refresh" content="0; url=./allure-history/latest/index.html" />
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  h1 { color: #333; }
+                  .report-list { margin-top: 20px; }
+                  .report-item { 
+                      padding: 10px; 
+                      margin: 5px 0; 
+                      background: #f5f5f5; 
+                      border-radius: 5px;
+                  }
+                  .report-item a { 
+                      text-decoration: none; 
+                      color: #0366d6; 
+                      font-weight: bold;
+                  }
+                  .report-item:hover { background: #e9e9e9; }
+              </style>
           </head>
           <body>
-              <p>Redirecting to latest Allure report...</p>
+              <h1>Allure Test Reports</h1>
+              <p><a href="./latest/index.html">View Latest Report</a></p>
+              
+              <div class="report-list">
+                  <h3>Historical Reports:</h3>
+                  <div id="reports"></div>
+              </div>
+              
+              <script>
+                  // JavaScript для динамического отображения списка отчетов
+                  fetch('./')
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const links = Array.from(doc.querySelectorAll('a[href*="allure-report-"]'));
+                        
+                        const reportsDiv = document.getElementById('reports');
+                        links
+                            .filter(link => link.href.includes('allure-report-'))
+                            .sort((a, b) => b.href.localeCompare(a.href))
+                            .forEach(link => {
+                                const item = document.createElement('div');
+                                item.className = 'report-item';
+                                item.innerHTML = `<a href="${link.href}">${link.textContent}</a>`;
+                                reportsDiv.appendChild(item);
+                            });
+                    });
+              </script>
           </body>
-          </html>' > index.html
+          </html>
+          EOF
 
       - name: Deploy to GitHub Pages
         if: always()
@@ -153,4 +191,9 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./gh-pages
-          force_orphan: false  # Сохраняем историю
+          force_orphan: false
+          keep_files: true  # Сохраняем старые отчеты
+
+      - name: Clean up
+        run: |
+          git worktree remove gh-pages
