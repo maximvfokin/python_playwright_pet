@@ -28,12 +28,7 @@ jobs:
       run_id: ${{ steps.run-tests.outputs.run_id }}
 
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install system dependencies
-        run: |
-          apt-get update
-          apt-get install -y curl unzip default-jre-headless
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -45,8 +40,6 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install allure-pytest pytest-xdist
-
-      # Allure CLI больше не нужен здесь — он используется только для генерации отчёта
 
       - name: Run tests
         id: run-tests
@@ -60,7 +53,6 @@ jobs:
           fi
           
           echo "Running tests with ENV=$ENV and args=$args"
-          
           echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
           
           pytest ${args} -n 4 --bn ${{ matrix.browser }} \
@@ -109,22 +101,22 @@ jobs:
             cp -r gh-pages/allure-history/latest "gh-pages/allure-history/$TIMESTAMP" || true
           fi
 
-      # ==================== Allure 3.1.0 через npm ====================
+      # ==================== Node.js + Allure 3.1.0 через npx ====================
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install Allure 3.1.0
-        run: |
-          npm install -g allure@3.1.0
-          allure --version
-      # =================================================================
+          cache: 'npm'                     # ускоряет повторные запуски
 
       - name: Generate Allure Report
         if: always()
         run: |
-          allure generate allure-results -o gh-pages/allure-history/latest --clean
+          # Удаляем старый latest (аналог --clean из Allure 2)
+          rm -rf gh-pages/allure-history/latest
+          
+          # Генерируем новый отчёт через npx (Allure 3.1.0)
+          npx allure@3.1.0 generate allure-results -o gh-pages/allure-history/latest
+      # =========================================================================
 
       - name: Prepare GitHub Pages directory
         if: always()
