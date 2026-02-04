@@ -133,6 +133,7 @@ jobs:
           if [ -n "$latest_dir" ]; then
             echo '<meta http-equiv="refresh" content="0; url=./'"${latest_dir#allure-history/}"'" />' > index.html
           fi
+
       - name: Deploy to GitHub Pages
         if: always()
         uses: peaceiris/actions-gh-pages@v4
