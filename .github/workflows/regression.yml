@@ -91,93 +91,35 @@ jobs:
           path: allure-results/
           retention-days: 7
 
-  # Опционально: Deploy to GitHub Pages (без сторонних Actions)
-  deploy-report:
-    if: always() && github.ref == 'refs/heads/main'
-    needs: [ playwright ]
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-      contents: write  # Добавьте это для записи в репозиторий
-      actions: read    # Для скачивания артефактов
+  publish-report:  # Джоба для публикации Allure-отчета на GitHub Pages
+    if: always()  # Джоба будет выполнена вне зависимости от успеха или неуспеха run-tests
+    needs: [ run-tests ]  # Выполняется только после успешного выполнения run-tests
+    runs-on: ubuntu-latest  # Используем последнюю версию Ubuntu
 
     steps:
-      - name: Download Allure results
-        uses: actions/download-artifact@v4
-        with:
-          pattern: allure-results-*
-          merge-multiple: true
-
-      - name: Setup Java for Allure
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y default-jre-headless
-
-      - name: Install Allure CLI
-        run: |
-          curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
-          tar -xzf allure-2.27.0.tgz -C /opt/
-          sudo ln -sf /opt/allure-2.27.0/bin/allure /usr/bin/allure
-
-      - name: Checkout main branch
+      - name: Check out repository  # Клонируем репозиторий, включая ветку gh-pages
         uses: actions/checkout@v4
         with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: gh-pages  # Операции будем выполнять в ветке gh-pages
+          path: gh-pages  # Клонируем файлы в папку gh-pages
 
-      - name: Checkout or create gh-pages
-        run: |
-          # Пытаемся получить ветку gh-pages
-          git fetch origin gh-pages 2>/dev/null || echo "gh-pages не существует, создаём..."
-
-          # Создаем или переключаемся на gh-pages
-          git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
-
-          # Очищаем ветку (кроме .git)
-          git rm -rf . 2>/dev/null || true
-
-          # Создаем .nojekyll для GitHub Pages
-          echo "" > .nojekyll
-
-          # Копируем результаты Allure
-          mkdir -p allure-reports/${{ github.run_number }}
-          if [ -d "allure-results" ]; then
-            cp -r allure-results/* allure-reports/${{ github.run_number }}/
-          fi
-
-          # Создаем симлинк latest
-          ln -sfn ${{ github.run_number }} allure-reports/latest
-
-          # Создаем index.html для навигации
-          cat > index.html << EOF
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Allure Reports</title>
-          </head>
-          <body>
-              <h1>Allure Test Reports</h1>
-              <ul>
-                  <li><a href="allure-reports/latest/index.html">Latest Report</a></li>
-              </ul>
-          </body>
-          </html>
-          EOF
-
-          # Добавляем и коммитим
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add -A
-          git commit -m "Deploy Allure report #${{ github.run_number }}"
-
-          # Пушим в gh-pages
-          git push origin gh-pages --force
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Download Allure results  # Загружаем ранее сохраненные результаты тестов
+        uses: actions/download-artifact@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
-          destination_dir: ./allure-reports
-          force_orphan: true
+          name: allure-results  # Название артефакта
+          path: allure-results  # Путь для скачивания
+
+      - name: Allure Report action from marketplace  # Генерация отчета Allure
+        uses: simple-elf/allure-report-action@v1.12
+        if: always()
+        with:
+          allure_results: allure-results  # Папка с результатами тестов
+          allure_history: allure-history  # Папка для хранения истории отчетов
+
+      - name: Deploy report to Github Pages  # Публикация отчета на GitHub Pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}  # Токен для доступа к репозиторию
+          publish_branch: gh-pages  # Публикуем отчет в ветку gh-pages
+          publish_dir: allure-history  # Папка, где находится сгенерированный отчет
