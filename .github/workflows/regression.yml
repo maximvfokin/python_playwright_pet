@@ -108,11 +108,11 @@ jobs:
           ref: gh-pages  # Операции будем выполнять в ветке gh-pages
           path: gh-pages  # Клонируем файлы в папку gh-pages
 
-      - name: Download Allure results  # Загружаем ранее сохраненные результаты тестов
+      - name: Download Allure results
         uses: actions/download-artifact@v4
         with:
-          name: allure-results  # Название артефакта
-          path: allure-results  # Путь для скачивания
+          name: allure-results-${{ needs.playwright.outputs.run_id }}
+          path: allure-results
 
       - name: Generate Allure Report with Docker
         if: always()
