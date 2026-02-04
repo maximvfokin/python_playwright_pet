@@ -26,6 +26,7 @@ jobs:
         browser: [ remote_chrome ]
     outputs:
       run_id: ${{ steps.run-tests.outputs.run_id }}
+
     steps:
       - uses: actions/checkout@v3
 
@@ -45,12 +46,7 @@ jobs:
           pip install -r requirements.txt
           pip install allure-pytest pytest-xdist
 
-      - name: Install Allure CLI
-        run: |
-          curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
-          tar -xzf allure-2.27.0.tgz -C /opt/
-          ln -sf /opt/allure-2.27.0/bin/allure /usr/bin/allure
-          allure --version
+      # Allure CLI больше не нужен здесь — он используется только для генерации отчёта
 
       - name: Run tests
         id: run-tests
@@ -65,10 +61,8 @@ jobs:
           
           echo "Running tests with ENV=$ENV and args=$args"
           
-          # Сохраняем run_id для передачи в следующую джобу
           echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
           
-          # Запуск тестов с генерацией Allure результатов
           pytest ${args} -n 4 --bn ${{ matrix.browser }} \
             --alluredir=allure-results \
             --clean-alluredir || true
@@ -95,7 +89,6 @@ jobs:
       - name: Download Allure results
         uses: actions/download-artifact@v4
         with:
-          # Используем run_id из контекста, а не из outputs
           name: allure-results-${{ github.run_id }}
           path: allure-results
 
@@ -111,31 +104,32 @@ jobs:
 
       - name: Copy previous reports for history
         run: |
-          # Копируем предыдущий отчет как историю, если он существует
           if [ -d "gh-pages/allure-history/latest" ]; then
-            # Создаем папку с timestamp для истории
             TIMESTAMP=$(date +%Y%m%d_%H%M%S)
             cp -r gh-pages/allure-history/latest "gh-pages/allure-history/$TIMESTAMP" || true
           fi
 
+      # ==================== Allure 3.1.0 через npm ====================
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Allure 3.1.0
+        run: |
+          npm install -g allure@3.1.0
+          allure --version
+      # =================================================================
+
       - name: Generate Allure Report
         if: always()
         run: |
-          # Используем локальный Allure CLI или Docker
-          if command -v allure &> /dev/null; then
-            allure generate allure-results -o gh-pages/allure-history/latest --clean
-          else
-            # Устанавливаем Allure CLI локально для этой джобы
-            curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
-            tar -xzf allure-2.27.0.tgz
-            ./allure-2.27.0/bin/allure generate allure-results -o gh-pages/allure-history/latest --clean
-          fi
+          allure generate allure-results -o gh-pages/allure-history/latest --clean
 
       - name: Prepare GitHub Pages directory
         if: always()
         run: |
           cd gh-pages
-          # Создаем index.html для перенаправления на последний отчет
           echo '<!DOCTYPE html>
           <html>
           <head>
@@ -153,4 +147,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./gh-pages
-          force_orphan: false  # Сохраняем историю
+          force_orphan: false
