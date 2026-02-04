@@ -106,7 +106,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'                     # ускоряет повторные запуски
+          # cache: 'npm' ← УДАЛЕНО, чтобы не было ошибки про lock file
 
       - name: Generate Allure Report
         if: always()
