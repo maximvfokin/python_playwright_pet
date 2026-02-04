@@ -95,6 +95,11 @@ jobs:
     if: always()  # Джоба будет выполнена вне зависимости от успеха или неуспеха run-tests
     needs: [ playwright ]  # Выполняется только после успешного выполнения run-tests
     runs-on: ubuntu-latest  # Используем последнюю версию Ubuntu
+    permissions:
+      pages: write
+      id-token: write
+      contents: write  # Добавьте это для записи в репозиторий
+      actions: read    # Для скачивания артефактов
 
     steps:
       - name: Check out repository  # Клонируем репозиторий, включая ветку gh-pages
