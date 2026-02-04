@@ -1,0 +1,1 @@
+[{"uid":"9cfbbf8ffb71f5f9","name":"Покупка продукта - альтернативный тест","time":{"start":1770203472831,"stop":1770203474593,"duration":1762},"status":"passed","severity":"normal"},{"uid":"7e575a106aed9608","name":"Покупка продукта - основной тест","time":{"start":1770203472854,"stop":1770203474640,"duration":1786},"status":"passed","severity":"critical"}]
