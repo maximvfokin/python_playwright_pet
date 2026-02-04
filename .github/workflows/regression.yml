@@ -24,6 +24,8 @@ jobs:
     strategy:
       matrix:
         browser: [ remote_chrome ]
+    outputs:
+      run_id: ${{ steps.run-tests.outputs.run_id }}
     steps:
       - uses: actions/checkout@v3
 
@@ -45,7 +47,6 @@ jobs:
 
       - name: Install Allure CLI
         run: |
-          # Скачиваем и устанавливаем Allure CLI
           curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
           tar -xzf allure-2.27.0.tgz -C /opt/
           ln -sf /opt/allure-2.27.0/bin/allure /usr/bin/allure
@@ -64,30 +65,19 @@ jobs:
           
           echo "Running tests with ENV=$ENV and args=$args"
           
+          # Сохраняем run_id для передачи в следующую джобу
+          echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
+          
           # Запуск тестов с генерацией Allure результатов
           pytest ${args} -n 4 --bn ${{ matrix.browser }} \
             --alluredir=allure-results \
             --clean-alluredir || true
 
-      - name: Generate Allure report
-        if: always()
-        run: |
-          # Генерируем HTML отчет
-          allure generate allure-results -o allure-report --clean
-
-      - name: Upload Allure report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report-${{ github.run_number }}
-          path: allure-report/
-          retention-days: 30
-
       - name: Upload Allure results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-results-${{ github.run_number }}
+          name: allure-results-${{ github.run_id }}
           path: allure-results/
           retention-days: 7
 
@@ -102,38 +92,60 @@ jobs:
       actions: read
 
     steps:
-      - name: Check out repository
+      - name: Download Allure results
+        uses: actions/download-artifact@v4
+        with:
+          # Используем run_id из контекста, а не из outputs
+          name: allure-results-${{ github.run_id }}
+          path: allure-results
+
+      - name: Checkout gh-pages branch
         uses: actions/checkout@v4
         with:
           ref: gh-pages
           path: gh-pages
 
-      - name: Download Allure results
-        uses: actions/download-artifact@v4
-        with:
-          # Теперь run_id будет корректно подставлен
-          name: allure-results-${{ needs.playwright.outputs.run_id }}
-          path: allure-results
+      - name: Create history directory if not exists
+        run: |
+          mkdir -p gh-pages/allure-history
 
-      - name: Generate Allure Report with Docker
+      - name: Copy previous reports for history
+        run: |
+          # Копируем предыдущий отчет как историю, если он существует
+          if [ -d "gh-pages/allure-history/latest" ]; then
+            # Создаем папку с timestamp для истории
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            cp -r gh-pages/allure-history/latest "gh-pages/allure-history/$TIMESTAMP" || true
+          fi
+
+      - name: Generate Allure Report
         if: always()
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}/allure-results:/allure-results \
-            -v ${{ github.workspace }}/gh-pages/allure-history:/allure-report \
-            tobix/allure-cli:latest \
-            generate /allure-results -o /allure-report --clean
+          # Используем локальный Allure CLI или Docker
+          if command -v allure &> /dev/null; then
+            allure generate allure-results -o gh-pages/allure-history/latest --clean
+          else
+            # Устанавливаем Allure CLI локально для этой джобы
+            curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
+            tar -xzf allure-2.27.0.tgz
+            ./allure-2.27.0/bin/allure generate allure-results -o gh-pages/allure-history/latest --clean
+          fi
 
       - name: Prepare GitHub Pages directory
         if: always()
         run: |
           cd gh-pages
           # Создаем index.html для перенаправления на последний отчет
-          # Эта команда найдет последнюю папку с отчетом и создаст ссылку
-          latest_dir=$(ls -td allure-history/*/ | head -n 1)
-          if [ -n "$latest_dir" ]; then
-            echo '<meta http-equiv="refresh" content="0; url=./'"${latest_dir#allure-history/}"'" />' > index.html
-          fi
+          echo '<!DOCTYPE html>
+          <html>
+          <head>
+              <title>Allure Test Reports</title>
+              <meta http-equiv="refresh" content="0; url=./allure-history/latest/index.html" />
+          </head>
+          <body>
+              <p>Redirecting to latest Allure report...</p>
+          </body>
+          </html>' > index.html
 
       - name: Deploy to GitHub Pages
         if: always()
@@ -141,3 +153,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./gh-pages
+          force_orphan: false  # Сохраняем историю
