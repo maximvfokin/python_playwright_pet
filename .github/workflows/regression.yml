@@ -47,9 +47,10 @@ jobs:
 
       - name: Install Allure CLI
         run: |
-          curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
-          tar -xzf allure-2.27.0.tgz -C /opt/
-          ln -sf /opt/allure-2.27.0/bin/allure /usr/bin/allure
+          # Устанавливаем Allure 3.0.0 (последняя стабильная версия 3.x)
+          curl -sL -o allure-3.0.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/3.0.0/allure-commandline-3.0.0.tgz
+          tar -xzf allure-3.0.0.tgz -C /opt/
+          ln -sf /opt/allure-3.0.0/bin/allure /usr/bin/allure
           allure --version
 
       - name: Run tests
@@ -121,14 +122,14 @@ jobs:
       - name: Generate Allure Report
         if: always()
         run: |
-          # Используем локальный Allure CLI или Docker
+          # Используем локальный Allure CLI или устанавливаем его
           if command -v allure &> /dev/null; then
-            allure generate allure-results -o gh-pages/allure-history/latest --clean
+          allure generate allure-results -o gh-pages/allure-history/latest --clean
           else
-            # Устанавливаем Allure CLI локально для этой джобы
-            curl -sL -o allure-2.27.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.27.0/allure-commandline-2.27.0.tgz
-            tar -xzf allure-2.27.0.tgz
-            ./allure-2.27.0/bin/allure generate allure-results -o gh-pages/allure-history/latest --clean
+          # Устанавливаем Allure CLI локально для этой джобы
+          curl -sL -o allure-3.0.0.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/3.0.0/allure-commandline-3.0.0.tgz
+          tar -xzf allure-3.0.0.tgz
+          ./allure-3.0.0/bin/allure generate allure-results -o gh-pages/allure-history/latest --clean
           fi
 
       - name: Prepare GitHub Pages directory
