@@ -120,7 +120,7 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}/allure-results:/allure-results \
             -v ${{ github.workspace }}/gh-pages/allure-history:/allure-report \
-            allure/allure-cli:2.17.2 \
+            tobix/allure-cli:latest \
             generate /allure-results -o /allure-report --clean
 
       - name: Prepare GitHub Pages directory
