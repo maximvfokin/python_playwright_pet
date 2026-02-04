@@ -91,7 +91,7 @@ jobs:
           path: allure-results/
           retention-days: 7
 
-  publish-report:  # Джоба для публикации Allure-отчета на GitHub Pages
+  publish-report: # Джоба для публикации Allure-отчета на GitHub Pages
     if: always()  # Джоба будет выполнена вне зависимости от успеха или неуспеха run-tests
     needs: [ playwright ]  # Выполняется только после успешного выполнения run-tests
     runs-on: ubuntu-latest  # Используем последнюю версию Ubuntu
@@ -114,17 +114,28 @@ jobs:
           name: allure-results  # Название артефакта
           path: allure-results  # Путь для скачивания
 
-      - name: Allure Report action from marketplace  # Генерация отчета Allure
-        uses: simple-elf/allure-report-action@v1.12
+      - name: Generate Allure Report with Docker
         if: always()
-        with:
-          allure_results: allure-results  # Папка с результатами тестов
-          allure_history: allure-history  # Папка для хранения истории отчетов
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/allure-results:/allure-results \
+            -v ${{ github.workspace }}/gh-pages/allure-history:/allure-report \
+            allure/allure-cli:2.17.2 \
+            generate /allure-results -o /allure-report --clean
 
-      - name: Deploy report to Github Pages  # Публикация отчета на GitHub Pages
+      - name: Prepare GitHub Pages directory
+        if: always()
+        run: |
+          cd gh-pages
+          # Создаем index.html для перенаправления на последний отчет
+          # Эта команда найдет последнюю папку с отчетом и создаст ссылку
+          latest_dir=$(ls -td allure-history/*/ | head -n 1)
+          if [ -n "$latest_dir" ]; then
+            echo '<meta http-equiv="refresh" content="0; url=./'"${latest_dir#allure-history/}"'" />' > index.html
+          fi
+      - name: Deploy to GitHub Pages
         if: always()
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}  # Токен для доступа к репозиторию
-          publish_branch: gh-pages  # Публикуем отчет в ветку gh-pages
-          publish_dir: allure-history  # Папка, где находится сгенерированный отчет
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages
